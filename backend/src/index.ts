@@ -116,6 +116,8 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({
           error: 'Invalid invite.'
         }))
+      } else if (data.action == "CHANGE_NAME") {
+        console.log('Received') // TODO: Make name change
       }
     } catch (e) {
       ws.send(JSON.stringify({

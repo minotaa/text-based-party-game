@@ -32,25 +32,32 @@ export class Dungeon {
     }
 
     generate(width: number, height: number) {
-        for (let h = 0; h < height; h++) {
-            const row: Tile[] = []
-            for (let w = 0; w < width; w++) {
-                row.push({character: " ", isSolid: false})
+        for (let w = 0; w < width; w++) {
+            const column: Tile[] = []
+            for (let h = 0; h < height; h++) {
+                column.push({character: " ", isSolid: false})
             }
-            this.tiles.push(row)
+            this.tiles.push(column)
         }
     }
 
     getText() {
         let output = ""
-        this.tiles.forEach((row) => { row.forEach((tile) => output += tile.character); output += "\n" })
+        for (let h = 0; h < this.height; h++) {
+            for (let w = 0; w < this.width; w++) {
+                output += this.tiles[w][h]
+            }
+            output += "\n"
+        }
         this.objects.forEach((obj) => output = replaceAt(output, obj.position.y * (this.height + 1) + obj.position.x, obj.character))
         return output
     }
 
     updateObjectPosition(obj: GameObject, x: number, y: number) {
-        this.objects.forEach((o) =>
-            if (o.position.x == x && o.position.y == y) return false)
+        if (this.tiles[x][y].isSolid) return false
+        this.objects.forEach((o) => {
+            if (o.isSolid && o.position.x == x && o.position.y == y) return false
+        })
 
         obj.position = {x, y}
         return true
