@@ -1,7 +1,7 @@
 import express from 'express'
 import 'dotenv/config'
 import WebSocket, { WebSocketServer } from 'ws'
-import { uuid } from 'uuidv4'
+import { v4 } from 'uuid'
 
 interface Game {
   id: string,
@@ -13,7 +13,7 @@ interface Game {
 
 const port = process.env.SERVER_PORT as any || 8080
 const wss = new WebSocketServer({ port: port })
-const clients: Map<WebSocket.WebSocket, string> = new Map()
+const clients: Map<WebSocket.WebSocket, any> = new Map()
 var games: Game[] = []
 
 function generateInvite() {
@@ -35,7 +35,7 @@ function removeFromArray<T>(array: Array<T>, item: T) {
   return arr
 }
 
-function getKeyByValue<K,V>(map: Map<K,V>, searchValue: V) {
+function getClientFromId(map: Map<any,any>, searchValue: any) {
   for (let [key, value] of map.entries()) {
     if (value === searchValue)
       return key;
@@ -43,22 +43,27 @@ function getKeyByValue<K,V>(map: Map<K,V>, searchValue: V) {
 }
 
 wss.on('connection', (ws) => {
-  const id = uuid()
-  clients.set(ws, id)
+  const id = v4()
+  const player = {
+    id: id,
+    name: "Player"
+  }
+  clients.set(ws, player)
 
   ws.send(JSON.stringify({
     id: id,
     action: "REGISTER_GAME"
   }))
+  console.log(`Player with id ${id} registered.`)
 
   ws.on('message', (msg) => {
     try {
       // Set players name when they create/join a game.
       const data = JSON.parse(msg as any)
-      const id = clients.get(ws) as string
+      const id = (clients.get(ws).id) as string
       if (data.action == "CREATE") {
         for (const game of games) {
-          if (game.players.includes(clients.get(ws) as string)) {
+          if (game.players.includes((clients.get(ws).id) as string)) {
             return ws.send(JSON.stringify({
               error: `You're already in a game.`,
               game: game
@@ -66,11 +71,11 @@ wss.on('connection', (ws) => {
           }
         }
         const game = {
-          id: uuid(),
+          id: v4(),
           invite: generateInvite(),
-          players: [id],
+          players: [clients.get(ws)],
           created: Date.now(),
-          owner: id
+          owner: clients.get(ws)
         }
         games.push(game)
         const message = {
@@ -78,19 +83,21 @@ wss.on('connection', (ws) => {
           game: game
         }
         ws.send(JSON.stringify(message))
+        console.log(`Creating game with invite ${game.invite} by ${game.owner.id}.`)
       } else if (data.action == "JOIN") {
         if (data.invite == null) {
           return ws.send(JSON.stringify({
             error: 'Invalid invite'
           }))
         }
+        console.log(`Receiving invite ${data.invite} from ${clients.get(ws).id}`)
         if ((data.invite as string).length != 4) {
           return ws.send(JSON.stringify({
             error: 'Invalid amount of characters.'
           }))
         }
         for (const game of games) {
-          if (game.players.includes(clients.get(ws) as string)) {
+          if (game.players.includes((clients.get(ws).id) as string)) {
             return ws.send(JSON.stringify({
               error: `You're already in a game.`,
               game: game
@@ -101,15 +108,16 @@ wss.on('connection', (ws) => {
         for (const game of games) {
           if (game.invite == data.invite) {
             invitedGame = game
-            game.players.push(clients.get(ws) as string)
+            game.players.push((clients.get(ws)) as string)
             const message = {
               action: "PLAYER_JOIN",
               game: game,
-              new_player: clients.get(ws) as string
+              new_player: clients.get(ws)
             }
-            game.players.forEach((player: string) => {
-              (getKeyByValue(clients, player) as WebSocket.WebSocket).send(JSON.stringify(message))
+            game.players.forEach((player: any) => {
+              (getClientFromId(clients, player) as WebSocket.WebSocket).send(JSON.stringify(message));
             })
+            console.log(`Player with ID ${(clients.get(ws).id) as string} joined ${game.invite}.`)
             return
           }
         }
@@ -117,7 +125,12 @@ wss.on('connection', (ws) => {
           error: 'Invalid invite.'
         }))
       } else if (data.action == "CHANGE_NAME") {
-        console.log('Received') // TODO: Make name change
+        console.log('Received a name change request') // TODO: Make name change
+        clients.get(ws).name = data.name
+        ws.send(JSON.stringify({
+          action: 'NAME_CHANGED',
+          new_name: data.name
+        }))
       }
     } catch (e) {
       ws.send(JSON.stringify({
@@ -129,14 +142,23 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     for (const game of games) {
-      if (game.players.includes(clients.get(ws) as string) && game.players.length == 1) {
+      if (game.players.includes((clients.get(ws))) && game.players.length == 1) {
         console.log(`Removing ${game.id} from games list due to empty.`)
         games = removeFromArray(games, game)
       }
-      if (game.players.includes(clients.get(ws) as string)) {
-        game.players = removeFromArray(game.players, clients.get(ws) as string)
+      if (game.players.includes((clients.get(ws)))) {
+        game.players = removeFromArray(game.players, (clients.get(ws)))
+        const message = { 
+          action: "PLAYER_LEAVE",
+          game: game,
+          player: clients.get(ws)
+        }
+        game.players.forEach((player: any) => {
+          (getClientFromId(clients, player) as WebSocket.WebSocket).send(JSON.stringify(message))
+        })
+        console.log(`Removed ${clients.get(ws).id} from ${game.invite}.`)
       }
-      if (game.owner == clients.get(ws) && game.players.length > 0) {
+      if (game.owner == (clients.get(ws)) && game.players.length > 0) {
         game.owner = game.players[0]
 
         const message = {
@@ -147,10 +169,11 @@ wss.on('connection', (ws) => {
                                                   // be something like "Previous owner gave you ownership."
         }
         game.players.forEach((player: any) => {
-          (getKeyByValue(clients, player) as WebSocket.WebSocket).send(JSON.stringify(message))
+          (getClientFromId(clients, player) as WebSocket.WebSocket).send(JSON.stringify(message))
         })
       }
     }
+    console.log(`Unregistering ${(clients.get(ws).id) as string} due to them disconnecting.`)
     clients.delete(ws)
   })
 })
