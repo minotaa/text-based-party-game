@@ -75,7 +75,7 @@
   }
 </script> 
 
-<main class="pt-4 container mx-auto">
+<main class="pt-4 pl-4">
   <h1 class="font-bold text-2xl">
     text-based party game
   </h1>
