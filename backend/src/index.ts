@@ -27,8 +27,11 @@ function removeFromArray(array: Array<any>, item: any) {
   return arr
 }
 
-function getKeyByValue(object: Map<any, any>, value: any): any {
-  return Object.keys(object).find(key => object.get(key) === value);
+function getByValue(map: any, searchValue: any) {
+  for (let [key, value] of map.entries()) {
+    if (value === searchValue)
+      return key;
+  }
 }
 
 wss.on('connection', (ws) => {
@@ -36,7 +39,8 @@ wss.on('connection', (ws) => {
   clients.set(ws, id)
 
   ws.send(JSON.stringify({
-    id: id
+    id: id,
+    action: "REGISTER_GAME"
   }))
 
   ws.on('message', (msg) => {
@@ -44,7 +48,14 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(msg as any)
       const id = clients.get(ws)
       if (data.action == "CREATE") {
-        // Doesn't check for client already being in any games.
+        for (const game of games) {
+          if (game.players.includes(clients.get(ws))) {
+            return ws.send(JSON.stringify({
+              error: `You're already in a game.`,
+              game: game
+            }))
+          }
+        }
         const game = {
           id: uuid(),
           invite: generateInvite(),
@@ -52,27 +63,52 @@ wss.on('connection', (ws) => {
           created: Date.now()
         }
         games.push(game)
-        ws.send(JSON.stringify(game))
+        const message = {
+          action: "CREATION",
+          game: game
+        }
+        ws.send(JSON.stringify(message))
       } else if (data.action == "JOIN") {
         if (data.invite == null) {
-          return ws.send('Invalid invite.')
+          return ws.send(JSON.stringify({
+            error: 'Invalid invite'
+          }))
         }
         if ((data.invite as string).length != 4) {
-          return ws.send('Invalid amount of characters.')
+          return ws.send(JSON.stringify({
+            error: 'Invalid amount of characters.'
+          }))
+        }
+        for (const game of games) {
+          if (game.players.includes(clients.get(ws))) {
+            return ws.send(JSON.stringify({
+              error: `You're already in a game.`,
+              game: game
+            }))
+          }
         }
         let invitedGame
         for (const game of games) {
           if (game.invite == data.invite) {
             invitedGame = game
             game.players.push(clients.get(ws))
-            // Unfinished, supposed to send all players that new player has joined.
+            const message = {
+              action: "PLAYER_JOIN",
+              game: game,
+              new_player: clients.get(ws)
+            }
+            game.players.forEach((player: any) => {
+              (getByValue(clients, player)).send(JSON.stringify(message))
+            })
             return
           }
         }
         ws.send('Invalid invite')
       }
     } catch (e) {
-      ws.send('Failed to receive mesage, try again.')
+      ws.send(JSON.stringify({
+        error: 'Failed to receive mesage, try again.'
+      }))
       console.log(e)
     }
   })
@@ -83,8 +119,10 @@ wss.on('connection', (ws) => {
         console.log(`Removing ${game.id} from games list.`)
         games = removeFromArray(games, game)
       }
+      if (game.players.includes(clients.get(ws))) {
+        game.players = removeFromArray(game.players, clients.get(ws))
+      }
     }
-    // Make sure to remove client from any games they are in.
     clients.delete(ws)
   })
 })
