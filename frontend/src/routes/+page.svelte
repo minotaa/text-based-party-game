@@ -1,16 +1,10 @@
 <script>
-// @ts-nocheck
-
+  //@ts-nocheck
   import "../app.css"
   import { onMount } from 'svelte'
 
-  /**
-     * @type {WebSocket}
-     */
   let socket
-    /**
-     * @type {Boolean}
-     */
+  let id
   let disconnected
   onMount(() => {
     socket = new WebSocket("ws://localhost:3000")
@@ -26,12 +20,18 @@
         game = data.game
       } else if (data.action == 'PLAYER_LEAVE') {
         game = data.game
+      } else if (data.action == 'OWNER_CHANGE') {
+        game = data.game
+      } else if (data.action == 'REGISTER_GAME') {
+        id = data.id
       }
     })
     socket.addEventListener("close", (e) => {
       disconnected = true
     })
   })
+
+
 
   /**
      * @type {object}
@@ -73,6 +73,17 @@
       action: 'CREATE'
     }))
   }
+
+  let started
+    /**
+   * @param {any} event
+   */
+  function handleStartGame(event) {
+    socket.send(JSON.stringify({
+      action: 'START_GAME'
+    }))
+    started = true
+  }
 </script> 
 
 <main class="pt-4 pl-4">
@@ -90,24 +101,35 @@
       <input bind:value={name} required placeholder="nickname" type="username" name="username" id="username" class="mr-2 shadow-inner rounded p-2 flex-1 bg-gray-200 mt-2" />
       <input bind:value={code} required placeholder="game code" type="text" name="gameCode" id="gameCode" class="mr-2 shadow-inner rounded p-2 flex-1 bg-gray-200 mt-2" />
       <button on:click={handleJoinGame} type="submit" class="bg-green-600 hover:bg-green-700 duration-300 text-white shadow p-2 rounded">
-        Join game!
+        join game
       </button>
       <h3 class="mt-4 font-bold">
         create game
       </h3>
       <input bind:value={name} required placeholder="nickname" type="username" name="username" id="username" class="mr-2 shadow-inner rounded p-2 flex-1 bg-gray-200 mt-2" />
       <button on:click={handleCreateGame} type="submit" class="bg-green-600 hover:bg-green-700 duration-300 text-white shadow p-2 rounded">
-        Create game!
+        create game
       </button>
     {:else} 
       <h2 class="text-xl mt-2">invite code: <code class="font-mono font-bold">{game.invite}</code></h2>
-      <h2 class="text-xl mb-2">players:</h2>
-      <ul>
-        {#each game.players as player}
-          <li class="font-bold font-mono text-base rounded-lg list-disc list-inside">{player.name}</li>
-        {/each}
-        <li></li>
-      </ul>
+      {#if started == null || started == false}
+        <h2 class="text-xl mb-2">players:</h2>
+        <ul>
+          {#each game.players as player}
+            {#if player.id === game.owner.id}
+              <li class="font-bold font-mono text-base rounded-lg list-disc list-inside">{player.name} (owner)</li>
+            {:else}
+              <li class="font-bold font-mono text-base rounded-lg list-disc list-inside">{player.name}</li>
+            {/if}
+          {/each}
+          <li></li>
+        </ul>
+        {#if game.players.length > 1 && game.owner.id == id}
+          <button on:click={handleStartGame} type="submit" class="mt-4 bg-green-600 hover:bg-green-700 duration-300 text-white shadow p-2 rounded">
+            start game
+          </button>
+        {/if}
+      {/if}
     {/if}
   {:else}
     <h2 class="text-xl mt-6">
